@@ -4,7 +4,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 
-//2 THREADS TO MAINTAIN AN OPEN CHANNEL WITH SERVER TO SEND AND RECEIVE MESSAGES
+//THREADED TO MAINTAIN AN OPEN CHANNEL WITH SERVER TO SEND AND RECEIVE MESSAGES
 public class HangmanClient implements Runnable
 {
     //CLIENT SOCKET INFO
@@ -49,7 +49,7 @@ public class HangmanClient implements Runnable
         }
         catch(IOException e)
         {
-            e.printStackTrace();
+            System.out.println("\n> Failed To Establish Connection With Server");
         }
     }
 
@@ -77,7 +77,7 @@ public class HangmanClient implements Runnable
                         writer.close();
                         clientIsUp = false;
                         clientSocket.close();
-                        System.out.println("Leaving Game Room. Goodbye!");
+                        System.out.println("\n> Leaving Game Room. Goodbye!");
                     }
                 }
             }

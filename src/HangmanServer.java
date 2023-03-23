@@ -1,10 +1,16 @@
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
+@SuppressWarnings("resource")
 public class HangmanServer implements Runnable
 {
     //SERVER LISTENER INFO
@@ -13,6 +19,9 @@ public class HangmanServer implements Runnable
 
     //THREAD POOL
     protected ExecutorService threadPool;
+
+    //ONLINE USERS ARRAY CREATED ON START UP
+    protected ArrayList<String> onlineUsers = new ArrayList<>();
 
     public static void main(String[] args)
     {
@@ -28,13 +37,15 @@ public class HangmanServer implements Runnable
             //INSTANTIATE SERVER LISTENER
             serverListener = new ServerSocket(9999);
             serverIsUp = true;
-            System.out.println("> Successfully Started Server ...");
+            System.out.println("\n> Successfully Started Server ...");
 
             //INITIALIZE FIXED THREAD POOL
             threadPool = Executors.newFixedThreadPool(4);
 
             //LOAD FILES UPON SERVER STARTUP
             loadFiles();
+
+            System.out.println("> Listening For Connections");
 
             //LISTEN FOR CONNECTIONS
             while(serverIsUp)
@@ -56,7 +67,7 @@ public class HangmanServer implements Runnable
 
     public void loadFiles() throws IOException
     {
-        String[] fileNames = {"clients.txt", "scoreHistory.txt", "phrases.txt", "configurations.txt"};
+        String[] fileNames = {"clients.txt", "scoreHistory.txt", "phrases.txt"};
 
         for (String name:fileNames)
         {
@@ -84,7 +95,7 @@ public class HangmanServer implements Runnable
         if((validationResults.size() == 1) && (validationResults.get(0)))
         {
             writeToFile("clients.txt",credentials);
-            writeToFile("scoreHistory.txt",credentials.split(" ")[1] + " 0");
+            writeToFile("scoreHistory.txt",credentials.split(" ")[1] + " " + Timestamp.from(Instant.now()) + " REGISTERED 100");
             return null;
         }
         return validationResults;
@@ -137,11 +148,7 @@ public class HangmanServer implements Runnable
         ArrayList<Boolean> validationResults = validateLogin(credentials);
         if((validationResults.size() == 1) && (validationResults.get(0)))
         {
-            //ADD 1 ?
-//            FileWriter clientFileWriter = new FileWriter("clients.txt", true);
-//            clientFileWriter.write(credentials);
-//            clientFileWriter.write(System.getProperty( "line.separator" ));
-//            clientFileWriter.close();
+            onlineUsers.add(credentials.split(" ")[0]);
             return null;
         }
         return validationResults;
@@ -193,21 +200,117 @@ public class HangmanServer implements Runnable
         return validationResults;
     }
 
-    public int getScore(String username) throws IOException
+    public int getScore(String username)
     {
-        FileInputStream fileStream = new FileInputStream("scoreHistory.txt");
-        DataInputStream inputStream = new DataInputStream(fileStream);
-        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
-
-        int score = -1;
-        String fileLine;
-        //USERNAME RESERVED
-        while ((fileLine = bufferedReader.readLine()) != null)
+        try
         {
-            if (fileLine.contains(username))
-                score = Integer.parseInt(fileLine.split(" ")[1]);
+            Path file = Paths.get("scoreHistory.txt");
+
+            String[] splitLine = null;
+            int noOfLines = (int) Files.lines(file).count();
+
+            for (int i = noOfLines-1 ; i >= 0 ; i--)
+            {
+                String fileLine = Files.readAllLines(file).get(i);
+                if(fileLine.contains(username))
+                {
+                    splitLine = fileLine.split(" ");
+                    break;
+                }
+            }
+
+            if(splitLine!=null)
+                return  Integer.parseInt(splitLine[splitLine.length-1]);
+            else
+                return -1;
         }
-        return score;
+        catch (IOException e)
+        {
+            e.getStackTrace();
+        }
+        return 0;
+    }
+
+    public String generatePhrase() throws IOException
+    {
+        //GENERATE RANDOM LINE NUMBER
+        Random random = new Random();
+        int randomLine = random.nextInt(148)+1;
+        //RETURN RANDOM PHRASE AT RANDOM LINE FROM FILE
+        return Files.readAllLines(Paths.get("phrases.txt")).get(randomLine);
+    }
+
+    public ArrayList<Integer> getGuessOccurrences(String phrase, Character guess)
+    {
+        ArrayList<Integer> occurrences = new ArrayList<>();
+        int i = 0;
+        while(i < phrase.length())
+        {
+            if(((Character.toUpperCase(phrase.charAt(i))) == guess) || ((Character.toLowerCase(phrase.charAt(i))) == guess))
+                occurrences.add(i);
+            i++;
+        }
+        return occurrences;
+    }
+
+    public String generateHiddenPhrase(String phrase, String hiddenPhrase, Character guess)
+    {
+        if(hiddenPhrase == null)
+        {
+            String updatedPhrase = "";
+            for (int i = 0; i < phrase.length(); i++)
+            {
+                if(phrase.charAt(i)!=' ')
+                    updatedPhrase = updatedPhrase.concat("_");
+                else
+                    updatedPhrase = updatedPhrase.concat(" ");
+            }
+            return updatedPhrase;
+        }
+
+        ArrayList<Integer> hiddenPhraseOccurrences = getGuessOccurrences(phrase, guess);
+        StringBuilder replacedCharacters = new StringBuilder(hiddenPhrase);
+
+        if(!hiddenPhraseOccurrences.isEmpty())
+        {
+            for (Integer index:hiddenPhraseOccurrences)
+            {
+                char character = phrase.charAt(index);
+                replacedCharacters.setCharAt(index, character);
+            }
+            return replacedCharacters.toString();
+        }
+        else
+            return null;
+    }
+
+    public String generateResponse(boolean expectedResponse)
+    {
+        //GENERATE RANDOM RESPONSE
+        Random random = new Random();
+        String[] positiveResponse = {"Bingo!", "Correct! On a Streak", "Nice Shot!", "Right On!", "Correct Guess!", "Great Play!", "Well Played!", "Spot On!", "Yes!"};
+        String[] negativeResponse = {"Nope", "Try A little Harder", "Good Guess but Also a Wrong One", "Tough Luck", "Incorrect", "Not Exactly", "Maybe Next Time", "Oops", "Unlucky"};
+
+        if(expectedResponse)
+            return positiveResponse[random.nextInt(positiveResponse.length)];
+        else
+            return negativeResponse[random.nextInt(positiveResponse.length)];
+        }
+
+    public void addToHistory(String username, int points, boolean win, String mode) throws IOException
+    {
+        if(win)
+        {
+            int newScore = getScore(username) + points;
+            String line = username + " " + Timestamp.from(Instant.now()) + " " + mode + " " + newScore;
+            writeToFile("scoreHistory.txt",line);
+        }
+        else
+        {
+            int newScore = getScore(username) - points;
+            String line = username + " " + Timestamp.from(Instant.now()) + " " + mode + " " + newScore;
+            writeToFile("scoreHistory.txt",line);
+        }
     }
 }
 
