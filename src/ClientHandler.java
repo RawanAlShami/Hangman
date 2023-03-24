@@ -12,6 +12,12 @@ public class ClientHandler extends HangmanServer implements Runnable
     //CLIENT SOCKET
     protected Socket clientSocket;
 
+    //CLIENT IN GAME
+    protected boolean inGame = false;
+
+    //ASSOCIATED CLIENT
+    protected String username;
+
     //SEND INFO FROM AND TO SERVER
     protected PrintWriter writer;
     protected BufferedReader reader;
@@ -50,18 +56,20 @@ public class ClientHandler extends HangmanServer implements Runnable
 
                         if (validationResults == null)
                         {
+                            boolean logged = true;
+
                             String username = userInput.split(" ")[0];
                             int score = getScore(username);
-                            onlineUsers.add(username);
-                            boolean logged = true;
-                            writer.printf("%75s%s%s%60s%d%n", "Hello ", username,"!", "Score: ",score);
+                            this.username = username;
+
+                            writer.printf("%75s%s%s%s%d%n", "Hello ", username,"!", "Score: ",score);
                             writer.flush();
 
                             while(logged)
                             {
                                 writer.println("\n> Pick An Opponent: ");
                                 writer.println("1- AI");
-                                writer.println("2- MultiPlayer");
+                                writer.println("2- Multiplayer");
                                 writer.println("3- Back");
 
                                 String opponent = reader.readLine();
@@ -80,8 +88,6 @@ public class ClientHandler extends HangmanServer implements Runnable
 
                                             String phrase = generatePhrase();
                                             String hiddenPhrase = generateHiddenPhrase(phrase, null, null);
-
-                                            writer.println(phrase);
 
                                             char guess;
                                             String updatedHiddenPhrase = hiddenPhrase;
@@ -156,11 +162,11 @@ public class ClientHandler extends HangmanServer implements Runnable
                                                 }
                                             }
 
-                                            writer.println("> The Movie Was: "+phrase);
+                                            writer.printf("%90s%s%n", phrase, "!");
                                             if(notGuessedYet == 0 && !AIsTurn)
                                             {
                                                 addToHistory(username,100,true,"SINGLE");
-                                                writer.println("> You Win! +100pts!");
+                                                writer.printf("%s%120s%d%n", "> You Win! +100pts!","Score: ",getScore(username));
                                             }
                                             else if(notGuessedYet == 0)
                                             {
@@ -172,14 +178,103 @@ public class ClientHandler extends HangmanServer implements Runnable
                                                 addToHistory(username,50,false,"SINGLE");
                                                 writer.println("> You Ran Out Of Guesses :( -50pts");
                                             }
-                                            writer.printf("%150s%d%n","Score: ",getScore(username));
                                             writer.println();
                                         }
                                     }
-                                    case "MultiPlayer" ->
+                                    case "Multiplayer" ->
                                     {
-                                        writer.println(">> Create Game Room");
-                                        writer.println(">> Join Game Room ");
+                                        writer.println("\n> Choose An Option");
+                                        writer.println("1- Create Team");
+                                        writer.println("2- Play Game");
+
+                                        String joinGame = reader.readLine();
+                                        switch(joinGame)
+                                        {
+                                            case "Create Team" ->
+                                            {
+                                                boolean teamNameValid = false;
+
+                                                while(!teamNameValid)
+                                                {
+                                                    writer.println("\n> Pick A Team Name");
+                                                    String teamName = reader.readLine();
+
+                                                    if(validateTeamName(teamName))
+                                                    {
+                                                        String line = teamName + " " + username;
+                                                        
+                                                        ArrayList<String> onlineUsers = onlineUsers(username);
+
+                                                        writer.println("\n> Enter the Number of Members in Team");
+                                                        int teamSize = Integer.parseInt(reader.readLine());
+
+                                                        if(teamSize > onlineUsers.size())
+                                                            writer.println("Not Enough Users Online. Try Again!");
+                                                        else
+                                                        {
+                                                            boolean membersValid = true;
+
+                                                            writer.println("\n> Pick Your Teammates (Enter Numbers Space Separated)");
+
+                                                            for (int j = 0; j < onlineUsers.size(); j++)
+                                                                writer.println(j+1 + "- "+ onlineUsers.get(j));
+
+                                                            String teamIndex = reader.readLine();
+                                                            String[] teamIndices = teamIndex.split(" ");
+
+                                                            for(int i = 0; i < teamIndices.length ; i++)
+                                                            {
+                                                                if((Integer.parseInt(teamIndices[i]) <= teamSize) && (Integer.parseInt(teamIndices[i]) > 0))
+                                                                    line+= " " + onlineUsers.get( (Integer.parseInt(teamIndices[i])) - 1);
+                                                                else
+                                                                {
+                                                                    membersValid = false;
+                                                                    writer.println("Invalid Team Member Provided! Please Try Again");
+                                                                    break;
+                                                                }
+                                                            }
+                                                            if(membersValid)
+                                                            {
+                                                                writer.println("\n Team Created Successfully!");
+                                                                writeToFile("teams.txt", line);
+                                                                teamNameValid = true;
+                                                            }
+                                                        }
+                                                    }
+                                                    else
+                                                        writer.println("Team Name Already Occupied! Please Try Again");
+                                                }
+                                            }
+                                            case "Play Game" ->
+                                            {
+                                                writer.println("\n> Pick An Existing Team Name");
+                                                String team = reader.readLine();
+
+                                                writer.println("\n> Pick An Opponents Team Name");
+                                                String ops = reader.readLine();
+
+                                                ArrayList<Boolean> gameValidation = validateTeams(username, team, ops);
+
+                                                writer.println(gameValidation);
+
+                                                if(gameValidation.isEmpty())
+                                                    writer.println("\n> Invalid Team Name!");
+                                                else if(!gameValidation.get(0))
+                                                    writer.println("\n> You Are Not A Part Of This Team!");
+                                                else if(!gameValidation.get(1))
+                                                    writer.println("\n> You Can Not Exist In Both Teams!");
+                                                else if(!gameValidation.get(2))
+                                                    writer.println("\n> Unequal Number of Members on Each Team!");
+                                                else if(!gameValidation.get(3))
+                                                    writer.println("\n> Not All Members Are Active At This Moment");
+                                                else
+                                                {
+                                                    writer.println("\n> Game In Progress ...");
+                                                    //get client handlers and start game
+                                                }
+                                            }
+                                            default -> writer.println("> Invalid Command");
+                                        }
                                     }
                                     case "Back" -> logged = false;
                                     default -> writer.println("> Invalid Command");
@@ -209,9 +304,13 @@ public class ClientHandler extends HangmanServer implements Runnable
                     {
                         writer.close();
                         reader.close();
-                        clientSocket.close();
+
+                        ClientHandler handler = getHandler(clientSocket);
+                        connections.remove(handler);
+
                         backToMainMenu = false;
                         System.out.println("> Destroying Connection   -> Client " + clientSocket);
+                        clientSocket.close();
                     }
                     default -> writer.println("> Invalid Command");
                 }
@@ -219,6 +318,9 @@ public class ClientHandler extends HangmanServer implements Runnable
         }
         catch(Exception e)
         {
+            ClientHandler handler = getHandler(clientSocket);
+            connections.remove(handler);
+
             System.out.println("> Connection Disrupted    -> Client " + clientSocket);
         }
     }

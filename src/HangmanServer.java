@@ -7,6 +7,8 @@ import java.nio.file.Paths;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,8 +22,8 @@ public class HangmanServer implements Runnable
     //THREAD POOL
     protected ExecutorService threadPool;
 
-    //ONLINE USERS ARRAY CREATED ON START UP
-    protected ArrayList<String> onlineUsers = new ArrayList<>();
+    //TRACK ALL SERVER CONNECTIONS
+    protected static ArrayList<ClientHandler> connections = new ArrayList<>();
 
     public static void main(String[] args)
     {
@@ -57,6 +59,7 @@ public class HangmanServer implements Runnable
                 //CREATE CLIENT THREAD AND EXECUTE RUN FUNCTION
                 ClientHandler clientHandler = new ClientHandler(clientSocket);
                 threadPool.execute(clientHandler);
+                connections.add(clientHandler);
             }
         }
         catch (Exception e)
@@ -148,7 +151,7 @@ public class HangmanServer implements Runnable
         ArrayList<Boolean> validationResults = validateLogin(credentials);
         if((validationResults.size() == 1) && (validationResults.get(0)))
         {
-            onlineUsers.add(credentials.split(" ")[0]);
+//            onlineUsers.add(credentials.split(" ")[0]);
             return null;
         }
         return validationResults;
@@ -311,6 +314,150 @@ public class HangmanServer implements Runnable
             String line = username + " " + Timestamp.from(Instant.now()) + " " + mode + " " + newScore;
             writeToFile("scoreHistory.txt",line);
         }
+    }
+
+    public void broadCast(String message, ArrayList<ClientHandler> clientHandlers)
+    {
+        for (ClientHandler clients:clientHandlers)
+        {
+            if(clients != null)
+                clients.writer.println(message);
+        }
+    }
+
+    public ArrayList<String> onlineUsers(String username)
+    {
+        ArrayList<String> onlineUsers = new ArrayList<>();
+
+        for (ClientHandler clientHandler: connections)
+        {
+            if(clientHandler.username != null && !clientHandler.inGame && !clientHandler.username.equals(username))
+                onlineUsers.add(clientHandler.username);
+        }
+        return onlineUsers;
+    }
+
+    public boolean validateTeamName(String teamName) throws IOException
+    {
+        //OPEN TEAMS FILE
+        FileInputStream fileStream = new FileInputStream("teams.txt");
+        DataInputStream inputStream = new DataInputStream(fileStream);
+        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+
+        String fileLine;
+        //USERNAME EXISTS
+        while ((fileLine = bufferedReader.readLine()) != null)
+        {
+            if(fileLine.split(" ")[0].equals(teamName))
+                return false;
+        }
+        inputStream.close();
+        return true;
+    }
+
+    public ArrayList<Boolean> validateTeams(String username, String team, String ops) throws IOException
+    {
+        ArrayList<Boolean> validationResults = new ArrayList<>();
+        //OPEN TEAMS FILE
+        FileInputStream fileStream = new FileInputStream("teams.txt");
+        DataInputStream inputStream = new DataInputStream(fileStream);
+        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+
+        String[] opsMembers = null;
+        String[] teamMembers = null;
+
+        String fileLine;
+        while ((fileLine = bufferedReader.readLine()) != null)
+        {
+            String[] splitLine = fileLine.split(" ");
+            if(splitLine[0].equals(team))
+                teamMembers = fileLine.split(" ");
+            if(splitLine[0].equals(ops))
+                opsMembers = fileLine.split(" ");
+        }
+
+        if(opsMembers==null || teamMembers==null)
+            return validationResults;
+
+        boolean inTeam = false;
+        for (int i = 1; i < teamMembers.length-1 ; i++)
+        {
+            if(teamMembers[i].equals(username))
+            {
+                inTeam = true;
+                break;
+            }
+        }
+        if(!inTeam)
+        {
+            validationResults.add(false);
+            return validationResults;
+        }
+
+        boolean inOps = false;
+        validationResults.add(true);
+        for (int i = 1; i < opsMembers.length-1 ; i++)
+        {
+            if(opsMembers[i].equals(username))
+            {
+                inOps = true;
+                break;
+            }
+        }
+        if(inOps)
+        {
+            validationResults.add(false);
+            return validationResults;
+        }
+
+        validationResults.add(true);
+
+        if(teamMembers.length != opsMembers.length)
+        {
+            validationResults.add(false);
+            return validationResults;
+        }
+
+        validationResults.add(true);
+
+        List<String> allMembers = new ArrayList<>(opsMembers.length + teamMembers.length);
+        Collections.addAll(allMembers, opsMembers);
+        Collections.addAll(allMembers, teamMembers);
+
+        boolean inGame = false;
+        for (ClientHandler clientHandler: connections)
+        {
+            for (String member: allMembers)
+            {
+                System.out.println(clientHandler.username);
+                if(clientHandler.username.equals(member) && clientHandler.inGame)
+                {
+                    inGame = true;
+                    break;
+                }
+            }
+            if(inGame)
+            {
+                validationResults.add(false);
+                break;
+            }
+        }
+
+        if(!inGame)
+            validationResults.add(true);
+
+        inputStream.close();
+        return validationResults;
+    }
+
+    public ClientHandler getHandler(Socket socket)
+    {
+        for (ClientHandler clientHandler: connections)
+        {
+            if(clientHandler.clientSocket==socket)
+                return clientHandler;
+        }
+        return null;
     }
 }
 
