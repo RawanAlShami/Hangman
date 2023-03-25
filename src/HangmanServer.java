@@ -6,10 +6,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 @SuppressWarnings("resource")
@@ -371,18 +368,18 @@ public class HangmanServer implements Runnable
         {
             String[] splitLine = fileLine.split(" ");
             if(splitLine[0].equals(team))
-                teamMembers = fileLine.split(" ");
+                teamMembers = Arrays.copyOfRange(splitLine, 1, splitLine.length);
             if(splitLine[0].equals(ops))
-                opsMembers = fileLine.split(" ");
+                opsMembers = Arrays.copyOfRange(splitLine, 1, splitLine.length);
         }
 
         if(opsMembers==null || teamMembers==null)
             return validationResults;
 
         boolean inTeam = false;
-        for (int i = 1; i < teamMembers.length-1 ; i++)
+        for (String member:teamMembers)
         {
-            if(teamMembers[i].equals(username))
+            if(member.equals(username))
             {
                 inTeam = true;
                 break;
@@ -396,9 +393,10 @@ public class HangmanServer implements Runnable
 
         boolean inOps = false;
         validationResults.add(true);
-        for (int i = 1; i < opsMembers.length-1 ; i++)
+
+        for (String member:opsMembers)
         {
-            if(opsMembers[i].equals(username))
+            if(member.equals(username))
             {
                 inOps = true;
                 break;
@@ -421,33 +419,69 @@ public class HangmanServer implements Runnable
         validationResults.add(true);
 
         List<String> allMembers = new ArrayList<>(opsMembers.length + teamMembers.length);
-        Collections.addAll(allMembers, opsMembers);
         Collections.addAll(allMembers, teamMembers);
+        Collections.addAll(allMembers, opsMembers);
 
-        boolean inGame = false;
-        for (ClientHandler clientHandler: connections)
+        boolean found = true;
+        for (String member: allMembers)
         {
-            for (String member: allMembers)
-            {
-                System.out.println(clientHandler.username);
-                if(clientHandler.username.equals(member) && clientHandler.inGame)
-                {
-                    inGame = true;
+            boolean connectionFound = false;
+            for (ClientHandler clientHandler : connections) {
+                if (clientHandler.username.equals(member)) {
+                    connectionFound = true;
                     break;
                 }
             }
-            if(inGame)
+            if (!connectionFound)
             {
+                found = false;
                 validationResults.add(false);
                 break;
             }
         }
 
-        if(!inGame)
+        if(found)
             validationResults.add(true);
 
         inputStream.close();
         return validationResults;
+    }
+
+    public String[] getTeamMembers(String teamName) throws IOException
+    {
+        //OPEN TEAMS FILE
+        FileInputStream fileStream = new FileInputStream("teams.txt");
+        DataInputStream inputStream = new DataInputStream(fileStream);
+        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+
+        String fileLine;
+        String[] members=null;
+        while ((fileLine = bufferedReader.readLine()) != null)
+        {
+            String[] splitLine = fileLine.split(" ");
+            if (fileLine.split(" ")[0].equals(teamName))
+            {
+                members = Arrays.copyOfRange(splitLine, 1, splitLine.length);
+                break;
+            }
+        }
+        inputStream.close();
+        return members;
+    }
+
+    public ArrayList<ClientHandler> getAllHandlers(String[] allMembers)
+    {
+        ArrayList<ClientHandler> handlers = new ArrayList<>();
+
+        for (String member : allMembers)
+        {
+            for (ClientHandler clientHandler: connections)
+            {
+                if (clientHandler.username.equals(member))
+                    handlers.add(clientHandler);
+            }
+        }
+        return handlers;
     }
 
     public ClientHandler getHandler(Socket socket)
@@ -458,6 +492,11 @@ public class HangmanServer implements Runnable
                 return clientHandler;
         }
         return null;
+    }
+
+    public void startMultiplayerGame(ArrayList<ClientHandler> teamAHandlers, ArrayList<ClientHandler> teamBHandlers) throws IOException
+    {
+//        System.out.println(teamAHandlers.get(1).reader.readLine());
     }
 }
 

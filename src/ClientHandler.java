@@ -15,6 +15,12 @@ public class ClientHandler extends HangmanServer implements Runnable
     //CLIENT IN GAME
     protected boolean inGame = false;
 
+    //READY TO PLAY
+    protected boolean ready = false;
+
+    //TEAM PICKED OPPONENT
+    protected boolean pickedPlayer = false;
+
     //ASSOCIATED CLIENT
     protected String username;
 
@@ -183,97 +189,141 @@ public class ClientHandler extends HangmanServer implements Runnable
                                     }
                                     case "Multiplayer" ->
                                     {
-                                        writer.println("\n> Choose An Option");
-                                        writer.println("1- Create Team");
-                                        writer.println("2- Play Game");
-
-                                        String joinGame = reader.readLine();
-                                        switch(joinGame)
+                                        boolean multiplayerMenu = true;
+                                        while(multiplayerMenu)
                                         {
-                                            case "Create Team" ->
+                                            writer.println("\n> Choose An Option");
+                                            writer.println("1- Create Team");
+                                            writer.println("2- Play Game");
+                                            writer.println("3- Back");
+
+                                            String joinGame = reader.readLine();
+                                            switch(joinGame)
                                             {
-                                                boolean teamNameValid = false;
-
-                                                while(!teamNameValid)
+                                                case "Create Team" ->
                                                 {
-                                                    writer.println("\n> Pick A Team Name");
-                                                    String teamName = reader.readLine();
+                                                    boolean teamNameValid = false;
 
-                                                    if(validateTeamName(teamName))
+                                                    while(!teamNameValid)
                                                     {
-                                                        String line = teamName + " " + username;
-                                                        
-                                                        ArrayList<String> onlineUsers = onlineUsers(username);
+                                                        writer.println("\n> Pick A Team Name");
+                                                        String teamName = reader.readLine();
 
-                                                        writer.println("\n> Enter the Number of Members in Team");
-                                                        int teamSize = Integer.parseInt(reader.readLine());
-
-                                                        if(teamSize > onlineUsers.size())
-                                                            writer.println("Not Enough Users Online. Try Again!");
-                                                        else
+                                                        if(validateTeamName(teamName))
                                                         {
-                                                            boolean membersValid = true;
+                                                            String line = teamName + " " + username;
 
-                                                            writer.println("\n> Pick Your Teammates (Enter Numbers Space Separated)");
+                                                            ArrayList<String> onlineUsers = onlineUsers(username);
 
-                                                            for (int j = 0; j < onlineUsers.size(); j++)
-                                                                writer.println(j+1 + "- "+ onlineUsers.get(j));
+                                                            writer.println("\n> Enter the Number of Members in Team");
+                                                            int teamSize = Integer.parseInt(reader.readLine());
 
-                                                            String teamIndex = reader.readLine();
-                                                            String[] teamIndices = teamIndex.split(" ");
-
-                                                            for(int i = 0; i < teamIndices.length ; i++)
+                                                            if(teamSize > onlineUsers.size())
+                                                                writer.println("Not Enough Users Online. Try Again!");
+                                                            else
                                                             {
-                                                                if((Integer.parseInt(teamIndices[i]) <= teamSize) && (Integer.parseInt(teamIndices[i]) > 0))
-                                                                    line+= " " + onlineUsers.get( (Integer.parseInt(teamIndices[i])) - 1);
-                                                                else
+                                                                boolean membersValid = true;
+
+                                                                writer.println("\n> Pick Your Teammates (Enter Numbers Space Separated)");
+
+                                                                for (int j = 0; j < onlineUsers.size(); j++)
+                                                                    writer.println(j+1 + "- "+ onlineUsers.get(j));
+
+                                                                String teamIndex = reader.readLine();
+                                                                String[] teamIndices = teamIndex.split(" ");
+
+                                                                for(int i = 0; i < teamIndices.length ; i++)
                                                                 {
-                                                                    membersValid = false;
-                                                                    writer.println("Invalid Team Member Provided! Please Try Again");
-                                                                    break;
+                                                                    if((Integer.parseInt(teamIndices[i]) <= teamSize) && (Integer.parseInt(teamIndices[i]) > 0))
+                                                                        line+= " " + onlineUsers.get( (Integer.parseInt(teamIndices[i])) - 1);
+                                                                    else
+                                                                    {
+                                                                        membersValid = false;
+                                                                        writer.println("Invalid Team Member Provided! Please Try Again");
+                                                                        break;
+                                                                    }
+                                                                }
+                                                                if(membersValid)
+                                                                {
+                                                                    writer.println("\n Team Created Successfully!");
+                                                                    writeToFile("teams.txt", line);
+                                                                    teamNameValid = true;
                                                                 }
                                                             }
-                                                            if(membersValid)
+                                                        }
+                                                        else
+                                                            writer.println("Team Name Already Occupied! Please Try Again");
+                                                    }
+                                                }
+                                                case "Play Game" ->
+                                                {
+                                                    String team = "";
+                                                    String ops = "";
+
+                                                    if(!pickedPlayer)
+                                                    {
+                                                        writer.println("\n> Pick An Existing Team Name");
+                                                        team = reader.readLine();
+
+                                                        writer.println("\n> Pick An Opponents Team Name");
+                                                        ops = reader.readLine();
+
+                                                        ArrayList<Boolean> gameValidation = validateTeams(username, team, ops);
+
+                                                        if (gameValidation.isEmpty())
+                                                            writer.println("\n> Invalid Team Name!");
+                                                        else if (!gameValidation.get(0))
+                                                            writer.println("\n> You Are Not A Part Of This Team!");
+                                                        else if (!gameValidation.get(1))
+                                                            writer.println("\n> You Can Not Exist In Both Teams!");
+                                                        else if (!gameValidation.get(2))
+                                                            writer.println("\n> Unequal Number of Members on Each Team!");
+                                                        else if (!gameValidation.get(3))
+                                                            writer.println("\n> Not All Members Are Active At This Moment");
+                                                        else
+                                                        {
+                                                            ready = true;
+                                                            inGame = true;
+
+                                                            String[] teamA = getTeamMembers(team);
+                                                            String[] teamB = getTeamMembers(ops);
+
+                                                            ArrayList<ClientHandler> teamAHandlers = getAllHandlers(teamA);
+                                                            ArrayList<ClientHandler> teamBHandlers = getAllHandlers(teamB);
+
+                                                            for (ClientHandler clientHandler: teamAHandlers)
                                                             {
-                                                                writer.println("\n Team Created Successfully!");
-                                                                writeToFile("teams.txt", line);
-                                                                teamNameValid = true;
+                                                                if(!clientHandler.username.equals(username))
+                                                                    clientHandler.pickedPlayer = true;
+                                                            }
+
+                                                            while (inGame)
+                                                            {
+                                                                startMultiplayerGame(teamAHandlers, teamBHandlers);
                                                             }
                                                         }
                                                     }
                                                     else
-                                                        writer.println("Team Name Already Occupied! Please Try Again");
+                                                    {
+                                                        writer.println("\n> Join a Game: " + team + " vs " + ops);
+                                                        writer.println("1- Join");
+                                                        writer.println("2- Back");
+
+                                                        String joinOrLeave = reader.readLine();
+                                                        switch (joinOrLeave)
+                                                        {
+                                                            case "Join" ->
+                                                            {
+
+                                                            }
+                                                            case "Back" -> {}
+                                                            default -> writer.println("> Invalid Command");
+                                                        }
+                                                    }
                                                 }
+                                                case "Back" -> multiplayerMenu = false;
+                                                default -> writer.println("> Invalid Command");
                                             }
-                                            case "Play Game" ->
-                                            {
-                                                writer.println("\n> Pick An Existing Team Name");
-                                                String team = reader.readLine();
-
-                                                writer.println("\n> Pick An Opponents Team Name");
-                                                String ops = reader.readLine();
-
-                                                ArrayList<Boolean> gameValidation = validateTeams(username, team, ops);
-
-                                                writer.println(gameValidation);
-
-                                                if(gameValidation.isEmpty())
-                                                    writer.println("\n> Invalid Team Name!");
-                                                else if(!gameValidation.get(0))
-                                                    writer.println("\n> You Are Not A Part Of This Team!");
-                                                else if(!gameValidation.get(1))
-                                                    writer.println("\n> You Can Not Exist In Both Teams!");
-                                                else if(!gameValidation.get(2))
-                                                    writer.println("\n> Unequal Number of Members on Each Team!");
-                                                else if(!gameValidation.get(3))
-                                                    writer.println("\n> Not All Members Are Active At This Moment");
-                                                else
-                                                {
-                                                    writer.println("\n> Game In Progress ...");
-                                                    //get client handlers and start game
-                                                }
-                                            }
-                                            default -> writer.println("> Invalid Command");
                                         }
                                     }
                                     case "Back" -> logged = false;
