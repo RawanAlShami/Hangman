@@ -308,6 +308,8 @@ public class HangmanServer implements Runnable
         else
         {
             int newScore = getScore(username) - points;
+            if(newScore < 0)
+                newScore = 0;
             String line = username + " " + Timestamp.from(Instant.now()) + " " + mode + " " + newScore;
             writeToFile("scoreHistory.txt",line);
         }
@@ -494,9 +496,137 @@ public class HangmanServer implements Runnable
         return null;
     }
 
+    public boolean playersInGame(ArrayList<ClientHandler> teamAHandlers, ArrayList<ClientHandler> teamBHandlers)
+    {
+        for (int i = 0; i < teamAHandlers.size() ; i++)
+        {
+            if(!teamAHandlers.get(i).inGame || !teamBHandlers.get(i).inGame)
+                return false;
+        }
+        return true;
+    }
+
     public void startMultiplayerGame(ArrayList<ClientHandler> teamAHandlers, ArrayList<ClientHandler> teamBHandlers) throws IOException
     {
-//        System.out.println(teamAHandlers.get(1).reader.readLine());
+        int attemptsTeamA = 6;
+        int attemptsTeamB = 6;
+
+        ArrayList<ClientHandler> allMembers = new ArrayList<>();
+        for(int i = 0; i < teamAHandlers.size() ; i++)
+        {
+            allMembers.add(teamAHandlers.get(i));
+            allMembers.add(teamBHandlers.get(i));
+        }
+
+        broadCast("\n> Game Started! ...", allMembers);
+
+        String phrase = generatePhrase();
+        String hiddenPhrase = generateHiddenPhrase(phrase, null, null);
+        String updatedHiddenPhrase = hiddenPhrase;
+
+        int notGuessedYet = getGuessOccurrences(hiddenPhrase, '_').size();
+
+        int i=0;
+        boolean teamA = true;
+        boolean quit = false;
+        while(attemptsTeamA > 0 && attemptsTeamB >0 && notGuessedYet > 0)
+        {
+            broadCast("Movie Title::  " + updatedHiddenPhrase + "\n", allMembers);
+
+            teamA = i == 0 || i == 2 || i == 4 | i == 6;
+
+            broadCast("> Attempts: " + attemptsTeamA, teamAHandlers);
+            broadCast("> Attempts: " + attemptsTeamB, teamBHandlers);
+
+            ArrayList<ClientHandler> tempHandlers = new ArrayList<>(allMembers);
+            tempHandlers.remove(allMembers.get(i));
+
+            broadCast("> " + allMembers.get(i).username + "'s Turn", tempHandlers);
+
+            allMembers.get(i).writer.println("> Enter Your Guess: ");
+            char guess = allMembers.get(i).reader.readLine().charAt(0);
+
+            if(guess!='-')
+            {
+                if(!getGuessOccurrences(updatedHiddenPhrase, guess).isEmpty())
+                {
+                    allMembers.get(i).writer.println("> Character Has Already Been Guessed :|\n");
+                    broadCast("> " + allMembers.get(i).username + " Guessed '" + guess +"'. Already Have been Guessed!", tempHandlers);
+                    if(teamA)
+                        attemptsTeamA--;
+                    else
+                        attemptsTeamB--;
+                }
+                else
+                {
+                    if(generateHiddenPhrase(phrase, updatedHiddenPhrase, guess) != null)
+                    {
+                        notGuessedYet-=getGuessOccurrences(phrase, guess).size();
+                        updatedHiddenPhrase = generateHiddenPhrase(phrase, updatedHiddenPhrase, guess);
+
+                        allMembers.get(i).writer.println("> " + generateResponse(true) + "\n");
+                        broadCast("> " + allMembers.get(i).username + " Guessed Correctly! \n", tempHandlers);
+                    }
+                    else
+                    {
+                        allMembers.get(i).writer.println("> " + generateResponse(false) + "\n");
+                        broadCast("> " + allMembers.get(i).username + " Guessed A Wrong Character! \n", tempHandlers);
+                        if(teamA)
+                            attemptsTeamA--;
+                        else
+                            attemptsTeamB--;
+                    }
+                }
+                i=(i+1)%allMembers.size();
+            }
+            else
+            {
+                quit = true;
+                break;
+            }
+        }
+        if (quit)
+        {
+            allMembers.get(i).writer.println("\n> You Quit The Game :( -100pts");
+            addToHistory(allMembers.get(i).username,100,false,"MULTI");
+
+            if(teamA)
+            {
+                broadCast("> " + allMembers.get(i).username + " Quit The Game. +100pts For Each Teammate!", teamBHandlers);
+                broadCast("> " + allMembers.get(i).username + " Game Ended Abruptly!", teamAHandlers);
+                for (ClientHandler clientHandler:teamBHandlers)
+                    addToHistory(clientHandler.username,100,true,"MULTI");
+            }
+            else
+            {
+                broadCast("> " + allMembers.get(i).username + " Quit The Game. +100pts For Each Teammate!", teamAHandlers);
+                broadCast("> " + allMembers.get(i).username + " Game Ended Abruptly!", teamBHandlers);
+                for (ClientHandler clientHandler:teamAHandlers)
+                    addToHistory(clientHandler.username,100,true,"MULTI");
+            }
+        }
+        else if(attemptsTeamA == 0 || (notGuessedYet == 0 && !teamA))
+        {
+            broadCast("> Your Ran Out Of Attempts :( Better Luck Next Time", teamAHandlers);
+            broadCast("> Your Team Wins! +100pts For Each Teammate", teamBHandlers);
+
+            for (ClientHandler clientHandler:teamBHandlers)
+                addToHistory(clientHandler.username,100,true,"MULTI");
+        }
+        else if(attemptsTeamB == 0 || (notGuessedYet == 0 && teamA))
+        {
+            broadCast("> Your Ran Out Of Attempts :( Better Luck Next Time", teamBHandlers);
+            broadCast("> Your Team Wins! +100pts For Each Teammate", teamAHandlers);
+
+            for (ClientHandler clientHandler:teamAHandlers)
+                addToHistory(clientHandler.username,100,true,"MULTI");
+        }
+
+        for (ClientHandler clientHandler:allMembers)
+        {
+            clientHandler.writer.printf("%150s%d%n", "Score: ", getScore(clientHandler.username));
+            clientHandler.inGame = false;
+        }
     }
 }
 
